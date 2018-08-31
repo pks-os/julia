@@ -22,7 +22,10 @@ function check_op(ir::IRCode, domtree::DomTree, @nospecialize(op), use_bb::Int, 
             if op.id > length(ir.stmts)
                 @assert ir.new_nodes[op.id - length(ir.stmts)].pos <= use_idx
             else
-                @assert op.id < use_idx
+                if op.id >= use_idx
+                    @verify_error "Def ($(op.id)) does not dominate use ($(use_idx)) in same BB"
+                    error()
+                end
             end
         else
             if !dominates(domtree, def_bb, use_bb) && !(bb_unreachable(domtree, def_bb) && bb_unreachable(domtree, use_bb))
@@ -71,9 +74,11 @@ function verify_ir(ir::IRCode)
             if c == 0
                 @verify_error "Predecessor $p of block $idx not in successor list"
                 error()
-            elseif c > 1
-                @verify_error "Predecessor $p of block $idx occurs too often in successor list"
-                error()
+            elseif c == 2
+                if count_int(p, block.preds) != 2
+                    @verify_error "Double edge from $p to $idx not correctly accounted"
+                    error()
+                end
             end
         end
         if isa(terminator, ReturnNode)
@@ -129,6 +134,9 @@ function verify_ir(ir::IRCode)
     # Verify statements
     domtree = construct_domtree(ir.cfg)
     for (bb, idx) in bbidxiter(ir)
+        # We allow invalid IR in dead code to avoid passes having to detect when
+        # they're generating dead code.
+        bb_unreachable(domtree, bb) && continue
         stmt = ir.stmts[idx]
         stmt === nothing && continue
         if isa(stmt, PhiNode)

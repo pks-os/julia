@@ -802,6 +802,9 @@ end
 
 # N.B.: from and to are non-renamed indices
 function kill_edge!(compact, active_bb, from, to)
+    # Note: We recursively kill as many edges as are obviously dead. However, this
+    # may leave dead loops in the IR. We kill these later in a CFG cleanup pass (or
+    # worstcase during codegen).
     preds, succs = compact.result_bbs[compact.bb_rename[to]].preds, compact.result_bbs[compact.bb_rename[from]].succs
     deleteat!(preds, findfirst(x->x === compact.bb_rename[from], preds)::Int)
     deleteat!(succs, findfirst(x->x === compact.bb_rename[to], succs)::Int)
@@ -865,7 +868,7 @@ function process_node!(compact::IncrementalCompact, result::Vector{Any},
         @assert stmt.dest !== active_bb+1
         result[result_idx] = stmt
         cond = stmt.cond
-        if false # isa(cond, Bool)
+        if isa(cond, Bool)
             if cond
                 result[result_idx] = nothing
                 kill_edge!(compact, active_bb, active_bb, stmt.dest)
